@@ -1,8 +1,6 @@
-<p align="center">
-  <img src="./assets/logo.svg" width="160" alt="Cortex" />
-</p>
-
-<h1 align="center">Cortex — Claude Code Plugin Marketplace</h1>
+<h1 align="center">
+  <img src="./assets/banner.svg" width="100%" alt="Cortex — Claude Code Plugin Marketplace" />
+</h1>
 
 <p align="center">
   <a href="https://github.com/alexander-danilenko/cortex-claude-code-plugins/blob/main/LICENSE">
