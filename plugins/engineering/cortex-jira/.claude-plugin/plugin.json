@@ -1,7 +1,7 @@
 {
   "$schema": "../../../../schemas/plugin.schema.json",
   "name": "cortex-jira",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Jira QA scope and business-friendly Jira reports built from tickets and commits",
   "author": {
     "name": "Alexander Danilenko",

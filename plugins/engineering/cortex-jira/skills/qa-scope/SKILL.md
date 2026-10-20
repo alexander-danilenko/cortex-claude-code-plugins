@@ -18,11 +18,12 @@ The skill works on these assumptions. Show them to the user in Step 1, so they c
 3. **Commit subjects and PR titles carry the Jira key** (`PROJ-123: Fix the thing.`). The skill uses the key to find the ticket's commits and merged PRs.
 4. **The repo glossary can be anywhere.** The skill uses the glossary the user or the repo instructions name. If there is none, it uses every `CONTEXT.md`, `CONCEPTS.md` or `GLOSSARY.md` at the repo root or under `docs/`. If none exists, it uses the ticket's own words.
 5. **The domain is the repo's own.** The skill brings no product vocabulary. Every domain word comes from the glossary, the ticket or the code.
+6. **The change has landed.** A QA scope is for work that is on a remote branch or an environment and needs a QA engineer. The skill links test files to that branch.
 
 ## Side effects
 
 - Reads Jira through the connector found in Step 1.
-- Runs read-only `git` (`fetch`, `log`, `show`, `diff`, `branch`) and read-only `gh pr view` / `gh pr diff` / `gh pr list` / `gh api`. `git fetch` updates remote-tracking refs only; it never touches the working tree.
+- Runs read-only `git` (`fetch`, `log`, `show`, `diff`, `branch`, `remote`, `cat-file`) and read-only `gh pr view` / `gh pr diff` / `gh pr list` / `gh api`. `git fetch` updates remote-tracking refs only; it never touches the working tree.
 - Writes one Markdown file under `docs/qa-scope/`. It never stages or commits it.
 - Posts **one new comment** to the Jira ticket, and only after the user approves the final draft in this conversation. Never edits the description, existing comments, fields or status.
 
@@ -157,11 +158,11 @@ format: <brief / full>
 
 ### <test type, e.g. Integration>
 
-- `[T1]: <path/from/git/root/to/file.spec.ts>`
+- `[T1]` [<file name>](<repo URL>/blob/<branch>/<path/from/git/root/to/file.spec.ts>)
 
 ### <next test type, e.g. E2E>
 
-- `[T2]: <path/from/git/root/to/file.e2e-spec.ts>`
+- `[T2]` [<file name>](<repo URL>/blob/<branch>/<path/from/git/root/to/file.e2e-spec.ts>)
 
 ## Open questions
 
@@ -184,9 +185,14 @@ Rules for _Automated tests_:
 
 - List a test file only when one of its tests checks a scenario exactly: the same state, the same action and the same result. A test that touches the same code but checks something else is not coverage. A wrong link makes QA skip a check that nobody runs.
 - Group the files under one `###` heading per type from Step 3, in pyramid order: Integration, Contract, E2E, then project-specific types A–Z. Leave out unit tests, also when the repo uses its own name for them. Leave out empty groups. No matching test at all → leave out the whole section.
-- Each line is a key and a file path in one code span: `` `[T1]: apps/web/src/search.spec.ts` ``. Without the backticks, Markdown reads `[T1]: path` as a link definition and Jira or GitHub hides the line.
-- Give the full file path from the git repo root (`git rev-parse --show-toplevel`), never a path relative to a package or the test folder. Several suites can share a spec name — `apps/web/src/search.spec.ts` and `apps/admin/src/search.spec.ts` — and only the full path tells them apart.
-- Give the path only: no line numbers, `describe` blocks, test names or explanations of what the test checks. QA opens the file to read or run it; the list only points to it.
+- Each line is a key and a test file. When `git remote get-url origin` points to GitHub or GitLab, link the file name to the file on the branch where the change landed, so QA opens it in one click:
+  - GitHub: `` `[T1]` [search.spec.ts](https://github.com/acme/shop/blob/develop/apps/web/src/search.spec.ts) ``
+  - GitLab: `` `[T1]` [search.spec.ts](https://gitlab.com/acme/shop/-/blob/develop/apps/web/src/search.spec.ts) ``
+  - Any other host: the path in one code span, `` `[T1]: apps/web/src/search.spec.ts` ``.
+- Keep the key in its own backticks. A bare `[T1]: …` at the start of a line is a Markdown link definition, and Jira or GitHub hides the line.
+- The branch where the change landed is the base branch of a merged PR, the head branch of an open PR, or the current branch when it is on `origin`. If none is known, take the first of `develop`, `main` and `master` that has the file on `origin` (`git cat-file -e origin/<branch>:<path>`).
+- Build the link or the path from the git repo root (`git rev-parse --show-toplevel`), never from a package or the test folder. Several suites can share a spec name — `apps/web/src/search.spec.ts` and `apps/admin/src/search.spec.ts` — and only the full path tells them apart.
+- Give the file only: no line numbers, `describe` blocks, test names or explanations of what the test checks. QA opens the file to read or run it; the list only points to it.
 - Number the keys `T1`…`Tn` across the whole section, in the order the files appear. One key per file, also when the file covers several scenarios.
 - Put the keys at the end of each covered scenario, after `·`: `` Sign in with email · `[T1]` `[T4]` ``. An item without keys is manual only — add no "no tests" note.
 - This is the one section in the draft where file paths are allowed.
