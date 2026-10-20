@@ -1,8 +1,8 @@
 ---
 name: qa-scope
 description: >-
-  Draft the QA scope and plain-language Given/When/Then test scenarios for a Jira ticket, built from the full ticket, the decisions made in its comments, and the actual code change read commit by commit (open PR, the ticket's merged PR, the branch against its base, or a named commit range). Saves a Markdown draft under docs/, iterates with the user, then posts it to the ticket as a new Jira comment only after explicit approval. Use on "QA scope for PROJ-123", "what should QA test", "write test scenarios for QA", "hand this ticket to QA", "prep the QA handoff", "gherkin scenarios for this ticket", or when a branch is ready for manual testing — even when the user only names the ticket or says "this branch".
-argument-hint: "[ISSUE-KEY] [PR number | commit range]"
+  Draft the QA scope and plain-language test scenarios for a Jira ticket — brief one-liners with automated test references by default, or full Given/When/Then steps — built from the full ticket, the decisions made in its comments, and the actual code change read commit by commit (open PR, the ticket's merged PR, the branch against its base, or a named commit range). Saves a Markdown draft under docs/, iterates with the user, then posts it to the ticket as a new Jira comment only after explicit approval. Use on "QA scope for PROJ-123", "what should QA test", "write test scenarios for QA", "hand this ticket to QA", "prep the QA handoff", "gherkin scenarios for this ticket", or when a branch is ready for manual testing — even when the user only names the ticket or says "this branch".
+argument-hint: "[ISSUE-KEY] [PR number | commit range] [brief | full]"
 ---
 
 # Jira QA Scope
@@ -16,7 +16,7 @@ The skill works on these assumptions. Show them to the user in Step 1, so they c
 1. **Jira is the issue tracker.** This is a hard rule. With no working Jira connector, the skill stops in Step 1.
 2. **The base branch is the repo's default branch** (`git symbolic-ref --short refs/remotes/origin/HEAD`). The user can name another one.
 3. **Commit subjects and PR titles carry the Jira key** (`PROJ-123: Fix the thing.`). The skill uses the key to find the ticket's commits and merged PRs.
-4. **The repo glossary can be anywhere.** The skill uses the glossary the user or the repo instructions name. If there is none, it uses `CONCEPTS.md` at the repo root when that file exists. If neither exists, it uses the ticket's own words.
+4. **The repo glossary can be anywhere.** The skill uses the glossary the user or the repo instructions name. If there is none, it uses every `CONTEXT.md`, `CONCEPTS.md` or `GLOSSARY.md` at the repo root or under `docs/`. If none exists, it uses the ticket's own words.
 5. **The domain is the repo's own.** The skill brings no product vocabulary. Every domain word comes from the glossary, the ticket or the code.
 
 ## Side effects
@@ -78,6 +78,13 @@ glossary: CONCEPTS.md
 jira_connector: Atlassian MCP
 ```
 
+Then ask which format the user wants, and wait for the answer:
+
+- **Brief** (default) — one line per scenario, plus the test references.
+- **Full** — the context sections, a summary, and Given/When/Then steps for each scenario.
+
+Skip the question only when the user's message already names the format. Reading a ticket and a diff costs minutes, so the format is settled before that work, not guessed after it.
+
 ### Step 2 — Load the ticket fully
 
 Fetch the ticket with `summary`, `description`, `status`, `issuetype`, `parent`, `issuelinks` and **all comments**. Also fetch the parent when present, and linked issues only when their summary is not enough.
@@ -98,7 +105,19 @@ Read the commits of the change, message with diff, as _Commits_ describes. Then 
 - Which **roles** see different behaviour — an end user, an admin, a support agent, a guest?
 - Which **states** does behaviour branch on — account status, permission, feature flag, a setting?
 - What changed with **no screen** (webhook, scheduled job, export)? Name the nearest thing a tester can observe: an email, a field on a page, an admin view.
-- Which **automated tests** (unit, integration, e2e, any kind) cover this behaviour? Look at the test files in the change and at existing tests for the changed code. You match them to scenarios in Step 4.
+- Which **automated tests** check this behaviour, and what **type** is each one? Look at the test files in the change and at existing tests for the changed code. You match them to scenarios in Step 4.
+
+Take each test's type from the repo, in this order:
+
+1. The repo instructions (`CLAUDE.md`, `AGENTS.md`, contributing docs) or a testing skill in the session that defines the test types.
+2. The repo's own signals: test runner configs (`playwright.config.ts`, `jest.config.*`), test scripts (`test:e2e` in `package.json`), folder names (`tests/contract/`), file suffixes (`.e2e-spec.ts`).
+3. When the repo gives no signal, these defaults, which follow the usual test pyramid:
+   - **Unit** — runs isolated, with no external system: no database, no network. It proves the code logic, not that the code works with real systems. Leave unit tests out of the draft: a manual tester cannot act on them.
+   - **Integration** — runs against real infrastructure the team controls: a database, a queue, a cache, a test container. It proves that parts work together, without the full user entry point and without production third parties.
+   - **Contract** — runs against real production external systems, for example the public contract of a data provider. It proves the outside system still behaves as the code expects.
+   - **E2E** — goes through the full entry point a user or client uses: the UI in a browser, or the public API with no browser.
+
+Keep the repo's own label, also when it differs from the defaults: a repo that calls its database-backed tests "unit" keeps "unit". QA runs tests by the repo's groups, so the repo's name is the one they can act on. A type the defaults do not know (`Smoke`, `Visual`) gets its own group under the repo's name.
 
 Compare this with Step 2. Note ticket items the diff does not touch and diff changes the ticket does not explain — both go to _Open questions_, not into scenarios. Do not audit the code; this is a test plan, not a review.
 
@@ -106,11 +125,18 @@ Compare this with Step 2. Note ticket items the diff does not touch and diff cha
 
 Read the glossary from Step 1, if there is one. Every domain word in the draft must be a term defined there, capitalized as it is there, and never an alias the glossary retires. When a term has two meanings, say which one.
 
-Write in simple English: invoke `/cortex-communication:simple-english` when it is available. If it is not, keep sentences under 20 words, one idea per sentence, active voice, no idioms.
+Write in strict ASD-STE100 Simplified Technical English: invoke `/cortex-communication:simple-english` (this plugin depends on it). Glossary terms are STE technical names — use them as they are, and use one term for one thing in the whole draft. If the skill is not available, apply the core rules: procedural sentences up to 20 words, descriptive up to 25, one instruction per sentence, imperative steps, active voice, condition before command, only `can`, `will` and `must` as modals, no idioms.
 
-Write for a manual tester who has never seen the code. No class names, endpoints, field names, file paths or vendor object ids — except in the _Automated tests_ block. A page is named by its relative URL plus what is on it.
+Condense. The reader is a tester between test runs, so each word must help them test. Cut what they will not act on, say each fact once in the whole draft, and prefer a glossary term to a description of it. Short must not cost clarity: keep every state, action and result a tester needs.
 
-Save to `docs/qa-scope/YYYY-MM-DD-<KEY>-qa-scope.md` with this shape:
+Write for a manual tester who has never seen the code. No class names, endpoints, field names, file paths or vendor object ids — except in the _Automated tests_ section. A page is named by its relative URL plus what is on it.
+
+Save to `docs/qa-scope/YYYY-MM-DD-<KEY>-qa-scope.md`. Read the reference for the format chosen in Step 1, and only that one — it holds the format's middle part and its own rules:
+
+- **Brief** (default) — [references/brief.md](references/brief.md)
+- **Full** — [references/full.md](references/full.md)
+
+Both formats share the start and the end of the draft:
 
 ```markdown
 ---
@@ -120,83 +146,56 @@ ticket_status: <status>
 change: <PR #n / branch / range>
 base: <base branch>
 glossary: <path / none>
+format: <brief / full>
 ---
 
 # QA scope: <KEY> — <ticket summary>
 
-## Summary
+<the format's middle part, from its reference>
 
-- **<flow or scenario name>** — <one to three sentences: what to test there and why, no steps>
-- <up to 5 items>
+## Automated tests
 
----
+### <test type, e.g. Integration>
 
-## What changed
+- `[T1]: <path/from/git/root/to/file.spec.ts>`
 
-- <1–3 bullets: the behaviour a user sees now, in product words>
+### <next test type, e.g. E2E>
 
-## Decisions from the ticket comments
-
-- <decision, and what it means for testing>
-
-## In scope
-
-- <page or flow> — <what to check there>
-
-## Out of scope
-
-- <what looks related but did not change, so QA does not spend time on it>
-
-## Test scenarios
-
-### Scenario: <short name>
-
-- **Given** <who the tester is and the account state, e.g. a signed-in user with the `{user_role}` role>
-- **And** <extra setup, if needed>
-- **When** <one action the tester takes, e.g. opens `/search?q={search_term}`>
-- **Then** <what they must see>
-- **And** <extra check, if needed>
-
-**Automated tests:**
-
-- `<path/from/git/root/to/file.spec.ts>`
-  - <describe block name>
-    - <test name exactly as in the code>
+- `[T2]: <path/from/git/root/to/file.e2e-spec.ts>`
 
 ## Open questions
 
 - <contradiction, unanswered comment, or ticket item the change does not cover>
 ```
 
-Rules for the summary:
+Rules for scenarios, in both formats:
 
-- It is the part a busy reader reads alone: a lead planning the test run, or a tester deciding where to start. They must see the whole scope in 30 seconds, without scrolling to the details.
-- Write at most 5 items. Each item names one flow or scenario group in bold, then says in plain words what to test there. No Given/When/Then, no steps, no variables.
-- Group scenarios to fit the limit. Several scenarios on one flow become one item. A regression check gets its own item only when it is a real risk.
-- Order the items as the detailed part orders them: the main change first, regression checks last.
-- Write the summary after the detailed part, so the two agree. The horizontal line (`---`) separates them.
-
-Rules for scenarios:
-
-- Write each step as a Markdown list item. Separate lines without list markers merge into one paragraph in Jira and in most Markdown viewers.
-- Write each value the tester picks as a variable in backticks and curly brackets: `{user_role}`, `{search_term}`, `{user_email}`. Use snake_case names that say what goes there. The tester then knows which values are theirs to choose, and the same scenario works on every environment.
-- One behaviour per scenario. The happy path first, then the states the change branches on, then what must **not** change (a regression check on the nearest neighbour flow).
-- `Given` sets up an account state a tester can create or find. When the state is hard to reach (a suspended account, a specific role), say so — they may need an admin or a developer to set it up.
-- `Then` is visible: text on a page, a button that appears or goes away, an email, a new row in a list. "The system updates the record" is not a check.
-- Scenario count follows the change. A one-line fix earns two or three scenarios; do not pad. Stay high level — steps like "click Save" belong to QA.
+- One behaviour per scenario. Put each scenario in one `###` group, set by what the diff does to that behaviour, not by the ticket type:
+  - **New** — the behaviour did not exist before.
+  - **Changed** — the behaviour existed and now gives a different result.
+  - **Fixed** — a bug behaviour that must not occur now.
+  - **Existing data** — records made before the release still show and work. Use only when the change touches stored data or runs a migration.
+  - **Regression** — a neighbour flow that must **not** change.
+- Write the groups in that order and leave out empty ones. An edge or negative case (an error state, no permission, bad input) stays in the group of the behaviour it tests. In a group, put the happy path first, then the states the change branches on.
+- The result is visible: text on a page, a button that appears or goes away, an email, a new row in a list. "The system updates the record" is not a check.
+- Scenario count follows the change. A one-line fix earns two or three scenarios; do not pad.
 
 Rules for _Automated tests_:
 
-- List a test only when it checks the exact scenario: the same state, the same action and the same result. A test that touches the same code but checks something else is not coverage. A wrong link makes QA skip a check that nobody runs.
+- List a test file only when one of its tests checks a scenario exactly: the same state, the same action and the same result. A test that touches the same code but checks something else is not coverage. A wrong link makes QA skip a check that nobody runs.
+- Group the files under one `###` heading per type from Step 3, in pyramid order: Integration, Contract, E2E, then project-specific types A–Z. Leave out unit tests, also when the repo uses its own name for them. Leave out empty groups. No matching test at all → leave out the whole section.
+- Each line is a key and a file path in one code span: `` `[T1]: apps/web/src/search.spec.ts` ``. Without the backticks, Markdown reads `[T1]: path` as a link definition and Jira or GitHub hides the line.
 - Give the full file path from the git repo root (`git rev-parse --show-toplevel`), never a path relative to a package or the test folder. Several suites can share a spec name — `apps/web/src/search.spec.ts` and `apps/admin/src/search.spec.ts` — and only the full path tells them apart.
-- Write the tests as a tree: the file path at the top, then one nested list level per `describe` block, then the test name. Copy each name exactly from the code. Tests in the same file share one file item, and tests in the same block share one block item, so the reader sees which tests belong together. The QA lead uses the list to decide what to run by hand; a developer uses it to find the test.
-- No matching test → leave out the _Automated tests_ block for that scenario. This is the one place in the draft where file paths are allowed.
+- Give the path only: no line numbers, `describe` blocks, test names or explanations of what the test checks. QA opens the file to read or run it; the list only points to it.
+- Number the keys `T1`…`Tn` across the whole section, in the order the files appear. One key per file, also when the file covers several scenarios.
+- Put the keys at the end of each covered scenario, after `·`: `` Sign in with email · `[T1]` `[T4]` ``. An item without keys is manual only — add no "no tests" note.
+- This is the one section in the draft where file paths are allowed.
 
-Leave out any section that is empty, except _Summary_ and _Test scenarios_.
+Leave out any section that is empty, except _Test scenarios_ and the sections the format's reference keeps.
 
 ### Step 5 — Review loop
 
-Show the file path and the full draft in the conversation. Ask the user to review it. Apply their edits to the file and show the changed parts again. Repeat until they say it is good.
+Show the file path and the full draft in the conversation. Ask the user to review it. Apply their edits to the file and show the changed parts again. When they ask for the other format, rewrite the draft from that format's reference. Repeat until they say it is good.
 
 ### Step 6 — Post to Jira
 
